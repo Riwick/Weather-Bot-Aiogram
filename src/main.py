@@ -8,9 +8,9 @@ from aiogram.filters import CommandStart
 from aiogram.types import Message
 from asyncpg import UniqueViolationError
 
-from config import BOT_TOKEN, ADMIN_ID, API_KEY
-from database import save_position, get_position, update_position
-from keyboards import get_location_markup
+from src.config import BOT_TOKEN, ADMIN_ID, API_KEY
+from src.database import save_position, get_position, update_position
+from src.keyboards import get_location_markup
 
 dp = Dispatcher()
 
@@ -72,7 +72,6 @@ async def confirm_location(message: Message):
         logging.log(level=logging.ERROR, msg=e)
 
 
-@dp.message(F.text == 'Отправь погоду')
 async def get_weather(message: Message):
     try:
         result = await get_position(user_id=message.from_user.id)
