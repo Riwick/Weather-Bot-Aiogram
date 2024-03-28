@@ -1,9 +1,24 @@
 version: "3.7"
 services:
+
+  bot:
+    build:
+      context: .
+    env_file:
+      - .env
+    volumes:
+      - .:/WeatherBot
+    depends_on:
+      - database
+    command:
+      sh -c "python src/main.py"
+    container_name: WeatherBot
+
   database:
     image: postgres:15.1-alpine
     ports:
       - "10000:5432"
     container_name: WeatherBotDB
+    hostname: database
     env_file:
       - .env

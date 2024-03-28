@@ -1,16 +1,19 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta
+
 import aiohttp
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode, ContentType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from asyncpg import UniqueViolationError
 
-from src.config import BOT_TOKEN, ADMIN_ID, API_KEY
-from src.database import save_position, get_position, update_position
-from src.keyboards import get_location_markup
+from config import BOT_TOKEN, ADMIN_ID, API_KEY
+from database import save_position, update_position, get_all_users
+from keyboards import get_location_markup
 
 dp = Dispatcher()
 
@@ -37,64 +40,62 @@ async def start_command(message: Message):
 @dp.message(F.content_type == ContentType.LOCATION)
 async def confirm_location(message: Message):
     try:
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(
-                f'http://api.openweathermap.org/data/2.5/weather?lat={message.location.latitude}'
-                f'&lon={message.location.longitude}&lang=ru&units=metric&appid={API_KEY}'
-            )
-            data = await response.json()
-            logging.log(level=logging.INFO, msg=data)
-            city = data['name']
-            cur_temp = data['main']['temp']
-            feels_like = data['main']['feels_like']
-            clouds = data['weather'][0].get('description')
-            humidity = data["main"]["humidity"]
-            wind = data["wind"]["speed"]
-            await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
-                                 f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                                 f'<b>{clouds}</b>\n'
-                                 f'Влажность воздуха: <b>{humidity}%</b>\n'
-                                 f'Ветер: <b>{wind} м/с</b>\n'
-                                 f'<b>Хорошего дня!</b>')
-            try:
-                await save_position(user_id=message.from_user.id, lat=message.location.latitude,
-                                    lon=message.location.longitude)
-            except UniqueViolationError:
-                try:
-                    await update_position(user_id=message.from_user.id, lat=message.location.latitude,
-                                          lon=message.location.longitude)
-                except Exception as e:
-                    logging.log(level=logging.ERROR, msg=e)
-                    await message.answer('Похоже, что-то пошло не так. '
-                                         'Пожалуйста проверь отправленную геолокацию или попробуй'
-                                         'ещё раз позже')
-    except Exception as e:
-        await message.answer(f'Прости, {message.from_user.username}, походу я сломался, но скоро снова заработаю')
-        logging.log(level=logging.ERROR, msg=e)
+        await save_position(user_id=message.from_user.id, lat=message.location.latitude,
+                            lon=message.location.longitude)
+    except UniqueViolationError:
+        try:
+            await update_position(user_id=message.from_user.id, lat=message.location.latitude,
+                                  lon=message.location.longitude)
+        except Exception as e:
+            logging.log(level=logging.ERROR, msg=e)
+            await message.answer('Похоже, что-то пошло не так. '
+                                 'Пожалуйста проверь отправленную геолокацию или попробуй'
+                                 'ещё раз позже')
+    async with aiohttp.ClientSession() as session:
+        response = await session.get(
+            f'http://api.openweathermap.org/data/2.5/weather?lat={message.location.latitude}'
+            f'&lon={message.location.longitude}&lang=ru&units=metric&appid={API_KEY}'
+        )
+        data = await response.json()
+        city = data['name']
+        cur_temp = data['main']['temp']
+        feels_like = data['main']['feels_like']
+        clouds = data['weather'][0].get('description')
+        humidity = data["main"]["humidity"]
+        wind = data["wind"]["speed"]
+        await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
+                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
+                             f'<b>{clouds}</b>\n'
+                             f'Влажность воздуха: <b>{humidity}%</b>\n'
+                             f'Ветер: <b>{wind} м/с</b>\n'
+                             f'<b>Хорошего дня!</b>')
 
 
-@dp.message(F.text == '111')
-async def get_weather(message: Message):
+async def send_weather_interval(bot: Bot):
     try:
-        result = await get_position(user_id=message.from_user.id)
-        async with aiohttp.ClientSession() as session:
-            response = await session.get(
-                f'http://api.openweathermap.org/data/2.5/weather?lat={result[0].get('lat')}'
-                f'&lon={result[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
-            )
-            data = await response.json()
-            city = data['name']
-            cur_temp = data['main']['temp']
-            feels_like = data['main']['feels_like']
-            clouds = data['weather'][0].get('description')
-            humidity = data["main"]["humidity"]
-            wind = data["wind"]["speed"]
-            await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
-                                 f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                                 f'<b>{clouds}</b>\n'
-                                 f'Влажность воздуха: <b>{humidity}%</b>\n'
-                                 f'Ветер: <b>{wind} м/с</b>\n'
-                                 f'<b>Хорошего дня!</b>')
+        offset = 0
+        result = await get_all_users(offset=offset)
+        for i in result:
+            async with aiohttp.ClientSession() as session:
+                response = await session.get(
+                    f'http://api.openweathermap.org/data/2.5/weather?lat={i[0].get('lat')}'
+                    f'&lon={i[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
+                )
+                data = await response.json()
+                city = data['name']
+                cur_temp = data['main']['temp']
+                feels_like = data['main']['feels_like']
+                clouds = data['weather'][0].get('description')
+                humidity = data["main"]["humidity"]
+                wind = data["wind"]["speed"]
+                await bot.send_message(i[0].get('user_id'), f'Сегодня на улицах города <b>{city}</b>: \n'
+                                                            f'Температура: <b>{cur_temp}°C</b>, ощущается как: '
+                                                            f'<b>{feels_like}°C</b>,'
+                                                            f'<b>{clouds}</b>\n'
+                                                            f'Влажность воздуха: <b>{humidity}%</b>\n'
+                                                            f'Ветер: <b>{wind} м/с</b>\n'
+                                                            f'<b>Хорошего дня!</b>')
+            offset += 1
     except Exception as e:
         logging.log(level=logging.ERROR, msg=e)
 
@@ -102,12 +103,17 @@ async def get_weather(message: Message):
 async def main():
     bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 
+    scheduler = AsyncIOScheduler(timezone='Asia/Yekaterinburg')
+    scheduler.add_job(send_weather_interval, trigger='interval',
+                      seconds=10, kwargs={'bot': bot})
+    scheduler.start()
+
     try:
-        await dp.start_polling(bot, allowed_updates=[])
+        await dp.start_polling(bot)
     finally:
         await bot.session.close()
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s:%(name)s-%(asctime)s-%(message)s')
     asyncio.run(main())
