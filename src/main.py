@@ -7,7 +7,7 @@ import aiohttp
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode, ContentType
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from asyncpg import UniqueViolationError
 
@@ -63,9 +63,26 @@ async def confirm_location(message: Message):
         clouds = data['weather'][0].get('description')
         humidity = data["main"]["humidity"]
         wind = data["wind"]["speed"]
+
+        code_to_smile = {
+            "Clear": "Ясно \U00002600",
+            "Clouds": "Облачно \U00002601",
+            "Rain": "Дождь \U00002614",
+            "Drizzle": "Дождь \U00002614",
+            "Thunderstorm": "Гроза \U000026A1",
+            "Snow": "Снег \U0001F328",
+            "Mist": "Туман \U0001F32B"
+        }
+        weather_description = data["weather"][0]["main"]
+
+        if weather_description in code_to_smile:
+            wd = code_to_smile[weather_description]
+        else:
+            wd = "Посмотри в окно, я не понимаю, что там за погода..."
+
         await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
                              f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                             f'<b>{clouds}</b>\n'
+                             f'<b>{wd.lower()}</b>\n'
                              f'Влажность воздуха: <b>{humidity}%</b>\n'
                              f'Ветер: <b>{wind} м/с</b>\n'
                              f'<b>Хорошего дня!</b>')
@@ -78,8 +95,8 @@ async def send_weather_interval(bot: Bot):
         for i in result:
             async with aiohttp.ClientSession() as session:
                 response = await session.get(
-                    f'http://api.openweathermap.org/data/2.5/weather?lat={i[0].get('lat')}'
-                    f'&lon={i[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
+                    f'http://api.openweathermap.org/data/2.5/weather?lat={i[1]}'
+                    f'&lon={i[2]}&lang=ru&units=metric&appid={API_KEY}'
                 )
                 data = await response.json()
                 city = data['name']
@@ -88,7 +105,7 @@ async def send_weather_interval(bot: Bot):
                 clouds = data['weather'][0].get('description')
                 humidity = data["main"]["humidity"]
                 wind = data["wind"]["speed"]
-                await bot.send_message(i[0].get('user_id'), f'Сегодня на улицах города <b>{city}</b>: \n'
+                await bot.send_message(i[0], f'Сегодня на улицах города <b>{city}</b>: \n'
                                                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: '
                                                             f'<b>{feels_like}°C</b>,'
                                                             f'<b>{clouds}</b>\n'
@@ -105,7 +122,7 @@ async def main():
 
     scheduler = AsyncIOScheduler(timezone='Asia/Yekaterinburg')
     scheduler.add_job(send_weather_interval, trigger='interval',
-                      seconds=10, kwargs={'bot': bot})
+                      seconds=7200, kwargs={'bot': bot})
     scheduler.start()
 
     try:
