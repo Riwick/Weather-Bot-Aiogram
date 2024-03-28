@@ -1,7 +1,7 @@
 import asyncio
 import logging
+import aiohttp
 
-import requests
 from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode, ContentType
 from aiogram.filters import CommandStart
@@ -37,62 +37,64 @@ async def start_command(message: Message):
 @dp.message(F.content_type == ContentType.LOCATION)
 async def confirm_location(message: Message):
     try:
-        response = requests.get(
-            f'http://api.openweathermap.org/data/2.5/weather?lat={message.location.latitude}'
-            f'&lon={message.location.longitude}&lang=ru&units=metric&appid={API_KEY}'
-        )
-        data = response.json()
-        logging.log(level=logging.INFO, msg=data)
-        city = data['name']
-        cur_temp = data['main']['temp']
-        feels_like = data['main']['feels_like']
-        clouds = data['weather'][0].get('description')
-        humidity = data["main"]["humidity"]
-        wind = data["wind"]["speed"]
-        await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
-                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                             f'<b>{clouds}</b>\n'
-                             f'Влажность воздуха: <b>{humidity}%</b>\n'
-                             f'Ветер: <b>{wind} м/с</b>\n'
-                             f'<b>Хорошего дня!</b>')
-        try:
-            await save_position(user_id=message.from_user.id, lat=message.location.latitude,
-                                lon=message.location.longitude)
-        except UniqueViolationError:
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(
+                f'http://api.openweathermap.org/data/2.5/weather?lat={message.location.latitude}'
+                f'&lon={message.location.longitude}&lang=ru&units=metric&appid={API_KEY}'
+            )
+            data = await response.json()
+            logging.log(level=logging.INFO, msg=data)
+            city = data['name']
+            cur_temp = data['main']['temp']
+            feels_like = data['main']['feels_like']
+            clouds = data['weather'][0].get('description')
+            humidity = data["main"]["humidity"]
+            wind = data["wind"]["speed"]
+            await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
+                                 f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
+                                 f'<b>{clouds}</b>\n'
+                                 f'Влажность воздуха: <b>{humidity}%</b>\n'
+                                 f'Ветер: <b>{wind} м/с</b>\n'
+                                 f'<b>Хорошего дня!</b>')
             try:
-                await update_position(user_id=message.from_user.id, lat=message.location.latitude,
-                                      lon=message.location.longitude)
-            except Exception as e:
-                logging.log(level=logging.ERROR, msg=e)
-                await message.answer('Похоже, что-то пошло не так. '
-                                     'Пожалуйста проверь отправленную геолокацию или попробуй'
-                                     'ещё раз позже')
+                await save_position(user_id=message.from_user.id, lat=message.location.latitude,
+                                    lon=message.location.longitude)
+            except UniqueViolationError:
+                try:
+                    await update_position(user_id=message.from_user.id, lat=message.location.latitude,
+                                          lon=message.location.longitude)
+                except Exception as e:
+                    logging.log(level=logging.ERROR, msg=e)
+                    await message.answer('Похоже, что-то пошло не так. '
+                                         'Пожалуйста проверь отправленную геолокацию или попробуй'
+                                         'ещё раз позже')
     except Exception as e:
         await message.answer(f'Прости, {message.from_user.username}, походу я сломался, но скоро снова заработаю')
         logging.log(level=logging.ERROR, msg=e)
 
 
+@dp.message(F.text == '111')
 async def get_weather(message: Message):
     try:
         result = await get_position(user_id=message.from_user.id)
-        print(result)
-        response = requests.get(
-            f'http://api.openweathermap.org/data/2.5/weather?lat={result[0].get('lat')}'
-            f'&lon={result[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
-        )
-        data = response.json()
-        city = data['name']
-        cur_temp = data['main']['temp']
-        feels_like = data['main']['feels_like']
-        clouds = data['weather'][0].get('description')
-        humidity = data["main"]["humidity"]
-        wind = data["wind"]["speed"]
-        await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
-                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                             f'<b>{clouds}</b>\n'
-                             f'Влажность воздуха: <b>{humidity}%</b>\n'
-                             f'Ветер: <b>{wind} м/с</b>\n'
-                             f'<b>Хорошего дня!</b>')
+        async with aiohttp.ClientSession() as session:
+            response = await session.get(
+                f'http://api.openweathermap.org/data/2.5/weather?lat={result[0].get('lat')}'
+                f'&lon={result[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
+            )
+            data = await response.json()
+            city = data['name']
+            cur_temp = data['main']['temp']
+            feels_like = data['main']['feels_like']
+            clouds = data['weather'][0].get('description')
+            humidity = data["main"]["humidity"]
+            wind = data["wind"]["speed"]
+            await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
+                                 f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
+                                 f'<b>{clouds}</b>\n'
+                                 f'Влажность воздуха: <b>{humidity}%</b>\n'
+                                 f'Ветер: <b>{wind} м/с</b>\n'
+                                 f'<b>Хорошего дня!</b>')
     except Exception as e:
         logging.log(level=logging.ERROR, msg=e)
 
