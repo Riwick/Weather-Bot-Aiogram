@@ -6,8 +6,10 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.enums import ParseMode, ContentType
 from aiogram.filters import CommandStart
 from aiogram.types import Message
+from asyncpg import UniqueViolationError
 
 from config import BOT_TOKEN, ADMIN_ID, API_KEY
+from database import save_position, get_position, update_position
 from keyboards import get_location_markup
 
 dp = Dispatcher()
@@ -47,17 +49,53 @@ async def confirm_location(message: Message):
         clouds = data['weather'][0].get('description')
         humidity = data["main"]["humidity"]
         wind = data["wind"]["speed"]
-        await message.reply(f'Сегодня на улицах города <b>{city}</b>: \n'
-                            f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
-                            f'<b>{clouds}</b>\n'
-                            f'Влажность воздуха: <b>{humidity}%</b>\n'
-                            f'Ветер: <b>{wind} м/с</b>\n'
-                            f'<b>Хорошего дня!</b>')
+        await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
+                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
+                             f'<b>{clouds}</b>\n'
+                             f'Влажность воздуха: <b>{humidity}%</b>\n'
+                             f'Ветер: <b>{wind} м/с</b>\n'
+                             f'<b>Хорошего дня!</b>')
+        try:
+            await save_position(user_id=message.from_user.id, lat=message.location.latitude,
+                                lon=message.location.longitude)
+        except UniqueViolationError:
+            try:
+                await update_position(user_id=message.from_user.id, lat=message.location.latitude,
+                                      lon=message.location.longitude)
+            except Exception as e:
+                logging.log(level=logging.ERROR, msg=e)
+                await message.answer('Похоже, что-то пошло не так. '
+                                     'Пожалуйста проверь отправленную геолокацию или попробуй'
+                                     'ещё раз позже')
+    except Exception as e:
+        await message.answer(f'Прости, {message.from_user.username}, походу я сломался, но скоро снова заработаю')
+        logging.log(level=logging.ERROR, msg=e)
+
+
+@dp.message(F.text == 'Отправь погоду')
+async def get_weather(message: Message):
+    try:
+        result = await get_position(user_id=message.from_user.id)
+        print(result)
+        response = requests.get(
+            f'http://api.openweathermap.org/data/2.5/weather?lat={result[0].get('lat')}'
+            f'&lon={result[0].get('lon')}&lang=ru&units=metric&appid={API_KEY}'
+        )
+        data = response.json()
+        city = data['name']
+        cur_temp = data['main']['temp']
+        feels_like = data['main']['feels_like']
+        clouds = data['weather'][0].get('description')
+        humidity = data["main"]["humidity"]
+        wind = data["wind"]["speed"]
+        await message.answer(f'Сегодня на улицах города <b>{city}</b>: \n'
+                             f'Температура: <b>{cur_temp}°C</b>, ощущается как: <b>{feels_like}°C</b>, '
+                             f'<b>{clouds}</b>\n'
+                             f'Влажность воздуха: <b>{humidity}%</b>\n'
+                             f'Ветер: <b>{wind} м/с</b>\n'
+                             f'<b>Хорошего дня!</b>')
     except Exception as e:
         logging.log(level=logging.ERROR, msg=e)
-        await message.reply('Возможно ты отправил мне неправильную геолокацию, попробуй ещё раз позже')
-
-    return message.location.latitude, message.location.longitude
 
 
 async def main():
